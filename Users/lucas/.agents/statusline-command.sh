@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+status_input=$(cat)
+
+# ANSI color helpers (use $'...' so the ESC byte is stored, not literal \033)
+color_reset=$'\033[0m'
+color_dim=$'\033[2m'
+color_bold=$'\033[1m'
+color_cyan=$'\033[36m'
+color_magenta=$'\033[35m'
+color_yellow=$'\033[33m'
+color_red=$'\033[31m'
+color_green=$'\033[32m'
+color_dim_cyan=$'\033[2;36m'
+color_dim_white=$'\033[2;37m'
+
+model_name=$(echo "$status_input" | jq -r '.model.display_name // empty')
+effort_level=$(jq -r '.effortLevel // empty' ~/.agents/settings.json 2>/dev/null)
+current_directory=$(echo "$status_input" | jq -r '.workspace.current_dir // .cwd // empty')
+git_branch=$(git -C "$current_directory" --no-optional-locks symbolic-ref --short HEAD 2>/dev/null \
+  || git -C "$current_directory" --no-optional-locks rev-parse --short HEAD 2>/dev/null)
+context_used_percentage=$(echo "$status_input" | jq -r '.context_window.used_percentage // empty')
+context_window_size=$(echo "$status_input" | jq -r '.context_window.context_window_size // empty')
+five_hour_used_percentage=$(echo "$status_input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+five_hour_resets_at=$(echo "$status_input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+weekly_used_percentage=$(echo "$status_input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+
+# Choose a color for a percentage value: green < 60, yellow < 80, red >= 80
+percentage_color() {
+  local percentage
+  percentage=$(printf '%.0f' "$1")
+  if [ "$percentage" -ge 80 ]; then
+    printf '%s' "$color_red"
+  elif [ "$percentage" -ge 60 ]; then
+    printf '%s' "$color_yellow"
+  else
+    printf '%s' "$color_green"
+  fi
+}
+
+# Choose a color for the effort level
+effort_level_color() {
+  case "$1" in
+    xhigh|max) printf '%s' "$color_red" ;;
+    high)      printf '%s' "$color_yellow" ;;
+    *)         printf '%s' "$color_green" ;;
+  esac
+}
+
+# Separator used between segments on the same line
+segment_separator="${color_dim_white} · ${color_reset}"
+
+line1_segments=()
+
+if [ -n "$model_name" ]; then
+  line1_segments+=("$(printf "${color_cyan}%s${color_reset}" "$model_name")")
+fi
+
+if [ -n "$effort_level" ]; then
+  effort_color=$(effort_level_color "$effort_level")
+  line1_segments+=("$(printf "${effort_color}%s${color_reset}" "$effort_level")")
+fi
+
+if [ -n "$context_used_percentage" ]; then
+  context_color=$(percentage_color "$context_used_percentage")
+  context_segment="$(printf "${color_dim}context:${color_reset} ${context_color}$(printf '%.0f' "$context_used_percentage")%%${color_reset}")"
+  if [ -n "$context_window_size" ]; then
+    context_window_kilo=$((context_window_size / 1000))
+    context_segment="${context_segment}$(printf "${color_dim} / ${context_window_kilo}K${color_reset}")"
+  fi
+  line1_segments+=("$context_segment")
+fi
+
+if [ -n "$five_hour_used_percentage" ]; then
+  five_hour_color=$(percentage_color "$five_hour_used_percentage")
+  five_hour_segment="$(printf "${color_dim}5h limit:${color_reset} ${five_hour_color}$(printf '%.0f' "$five_hour_used_percentage")%%${color_reset}")"
+  if [ -n "$five_hour_resets_at" ]; then
+    five_hour_reset_time=$(date -r "$five_hour_resets_at" +"%H:%M" 2>/dev/null)
+    [ -n "$five_hour_reset_time" ] && five_hour_segment="${five_hour_segment}$(printf "${color_dim} (resets %s)${color_reset}" "$five_hour_reset_time")"
+  fi
+  line1_segments+=("$five_hour_segment")
+fi
+
+if [ -n "$weekly_used_percentage" ]; then
+  weekly_color=$(percentage_color "$weekly_used_percentage")
+  line1_segments+=("$(printf "${color_dim}weekly limit:${color_reset} ${weekly_color}$(printf '%.0f' "$weekly_used_percentage")%%${color_reset}")")
+fi
+
+line2_segments=()
+project_directory=$(echo "$status_input" | jq -r '.workspace.project_dir // empty')
+
+if [ -n "$project_directory" ] && [ -n "$git_branch" ]; then
+  project_directory_display="${project_directory/#$HOME/\~}"
+  line2_segments+=("$(printf "${color_dim}root:${color_reset} ${color_cyan}%s${color_reset}" "$project_directory_display")")
+  line2_segments+=("$(printf "${color_dim}branch:${color_reset} ${color_magenta}%s${color_reset}" "$git_branch")")
+  if [ -n "$current_directory" ] && [ "$current_directory" != "$project_directory" ]; then
+    relative_directory="${current_directory#$project_directory/}"
+    line2_segments+=("$(printf "${color_dim}current:${color_reset} ${color_cyan}%s${color_reset}" "$relative_directory")")
+  fi
+elif [ -n "$current_directory" ]; then
+  current_directory_display="${current_directory/#$HOME/\~}"
+  line2_segments+=("$(printf "${color_dim}root:${color_reset} ${color_cyan}%s${color_reset}" "$current_directory_display")")
+  [ -n "$git_branch" ] && line2_segments+=("$(printf "${color_dim}branch:${color_reset} ${color_magenta}%s${color_reset}" "$git_branch")")
+fi
+
+join_segments() {
+  local joined=""
+  for segment in "$@"; do
+    if [ -n "$joined" ]; then
+      joined="${joined}${segment_separator}${segment}"
+    else
+      joined="$segment"
+    fi
+  done
+  printf '%s' "$joined"
+}
+
+line1_output=$(join_segments "${line1_segments[@]}")
+line2_output=$(join_segments "${line2_segments[@]}")
+printf '%s\n%s\n' "$line1_output" "$line2_output"
