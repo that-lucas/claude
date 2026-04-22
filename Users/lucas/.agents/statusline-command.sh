@@ -74,7 +74,7 @@ if [ -n "$five_hour_used_percentage" ]; then
   five_hour_color=$(percentage_color "$five_hour_used_percentage")
   five_hour_segment="$(printf "${color_dim}5h limit:${color_reset} ${five_hour_color}$(printf '%.0f' "$five_hour_used_percentage")%%${color_reset}")"
   if [ -n "$five_hour_resets_at" ]; then
-    five_hour_reset_time=$(date -r "$five_hour_resets_at" +"%H:%M" 2>/dev/null)
+    five_hour_reset_time=$(date -r "$five_hour_resets_at" +"%I%p" 2>/dev/null | sed 's/^0//')
     if [ -n "$five_hour_reset_time" ]; then
       now_epoch=$(date +%s)
       secs_remaining=$(( five_hour_resets_at - now_epoch ))
@@ -82,7 +82,7 @@ if [ -n "$five_hour_used_percentage" ]; then
         remaining_hh=$(( secs_remaining / 3600 ))
         remaining_mm=$(( (secs_remaining % 3600) / 60 ))
         if [ "$remaining_hh" -gt 0 ]; then
-          remaining_fmt=$(printf '%dh%dmin' "$remaining_hh" "$remaining_mm")
+          remaining_fmt=$(printf '%dh %dmin' "$remaining_hh" "$remaining_mm")
         else
           remaining_fmt=$(printf '%dmin' "$remaining_mm")
         fi
@@ -100,7 +100,7 @@ if [ -n "$weekly_used_percentage" ]; then
   weekly_segment="$(printf "${color_dim}weekly limit:${color_reset} ${weekly_color}$(printf '%.0f' "$weekly_used_percentage")%%${color_reset}")"
   weekly_resets_at=$(echo "$status_input" | jq -r '.rate_limits.seven_day.resets_at // empty')
   if [ -n "$weekly_resets_at" ]; then
-    weekly_reset_fmt=$(date -r "$weekly_resets_at" +"%a %H:%M" 2>/dev/null)
+    weekly_reset_fmt=$(date -r "$weekly_resets_at" +"%a %I%p" 2>/dev/null | sed 's/ 0/ /')
     if [ -n "$weekly_reset_fmt" ]; then
       now_epoch=$(date +%s)
       weekly_secs_remaining=$(( weekly_resets_at - now_epoch ))
@@ -113,7 +113,7 @@ if [ -n "$weekly_used_percentage" ]; then
         elif [ "$weekly_remaining_dd" -gt 1 ]; then
           weekly_remaining_fmt=$(printf '%d days' "$weekly_remaining_dd")
         elif [ "$weekly_remaining_hh" -gt 0 ]; then
-          weekly_remaining_fmt=$(printf '%dh%dmin' "$weekly_remaining_hh" "$weekly_remaining_mm")
+          weekly_remaining_fmt=$(printf '%dh %dmin' "$weekly_remaining_hh" "$weekly_remaining_mm")
         else
           weekly_remaining_fmt=$(printf '%dmin' "$weekly_remaining_mm")
         fi
