@@ -75,14 +75,55 @@ if [ -n "$five_hour_used_percentage" ]; then
   five_hour_segment="$(printf "${color_dim}5h limit:${color_reset} ${five_hour_color}$(printf '%.0f' "$five_hour_used_percentage")%%${color_reset}")"
   if [ -n "$five_hour_resets_at" ]; then
     five_hour_reset_time=$(date -r "$five_hour_resets_at" +"%H:%M" 2>/dev/null)
-    [ -n "$five_hour_reset_time" ] && five_hour_segment="${five_hour_segment}$(printf "${color_dim} (resets %s)${color_reset}" "$five_hour_reset_time")"
+    if [ -n "$five_hour_reset_time" ]; then
+      now_epoch=$(date +%s)
+      secs_remaining=$(( five_hour_resets_at - now_epoch ))
+      if [ "$secs_remaining" -gt 0 ]; then
+        remaining_hh=$(( secs_remaining / 3600 ))
+        remaining_mm=$(( (secs_remaining % 3600) / 60 ))
+        if [ "$remaining_hh" -gt 0 ]; then
+          remaining_fmt=$(printf '%dh%dmin' "$remaining_hh" "$remaining_mm")
+        else
+          remaining_fmt=$(printf '%dmin' "$remaining_mm")
+        fi
+        five_hour_segment="${five_hour_segment}$(printf "${color_dim} (resets in ${color_reset}${color_green}%s at %s${color_reset}${color_dim})${color_reset}" "$remaining_fmt" "$five_hour_reset_time")"
+      else
+        five_hour_segment="${five_hour_segment}$(printf "${color_dim} (resets at ${color_reset}${color_green}%s${color_reset}${color_dim})${color_reset}" "$five_hour_reset_time")"
+      fi
+    fi
   fi
   line1_segments+=("$five_hour_segment")
 fi
 
 if [ -n "$weekly_used_percentage" ]; then
   weekly_color=$(percentage_color "$weekly_used_percentage")
-  line1_segments+=("$(printf "${color_dim}weekly limit:${color_reset} ${weekly_color}$(printf '%.0f' "$weekly_used_percentage")%%${color_reset}")")
+  weekly_segment="$(printf "${color_dim}weekly limit:${color_reset} ${weekly_color}$(printf '%.0f' "$weekly_used_percentage")%%${color_reset}")"
+  weekly_resets_at=$(echo "$status_input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+  if [ -n "$weekly_resets_at" ]; then
+    weekly_reset_fmt=$(date -r "$weekly_resets_at" +"%a %H:%M" 2>/dev/null)
+    if [ -n "$weekly_reset_fmt" ]; then
+      now_epoch=$(date +%s)
+      weekly_secs_remaining=$(( weekly_resets_at - now_epoch ))
+      if [ "$weekly_secs_remaining" -gt 0 ]; then
+        weekly_remaining_dd=$(( weekly_secs_remaining / 86400 ))
+        weekly_remaining_hh=$(( (weekly_secs_remaining % 86400) / 3600 ))
+        weekly_remaining_mm=$(( (weekly_secs_remaining % 3600) / 60 ))
+        if [ "$weekly_remaining_dd" -eq 1 ]; then
+          weekly_remaining_fmt="1 day"
+        elif [ "$weekly_remaining_dd" -gt 1 ]; then
+          weekly_remaining_fmt=$(printf '%d days' "$weekly_remaining_dd")
+        elif [ "$weekly_remaining_hh" -gt 0 ]; then
+          weekly_remaining_fmt=$(printf '%dh%dmin' "$weekly_remaining_hh" "$weekly_remaining_mm")
+        else
+          weekly_remaining_fmt=$(printf '%dmin' "$weekly_remaining_mm")
+        fi
+        weekly_segment="${weekly_segment}$(printf "${color_dim} (resets in ${color_reset}${color_green}%s on %s${color_reset}${color_dim})${color_reset}" "$weekly_remaining_fmt" "$weekly_reset_fmt")"
+      else
+        weekly_segment="${weekly_segment}$(printf "${color_dim} (resets on ${color_reset}${color_green}%s${color_reset}${color_dim})${color_reset}" "$weekly_reset_fmt")"
+      fi
+    fi
+  fi
+  line1_segments+=("$weekly_segment")
 fi
 
 line2_segments=()
